@@ -34,9 +34,9 @@ Proof.
     congruence.
 Qed.
 
-Instance id_eqdec : forall (i1 i2: id), Decidable (eq i1 i2) :=
-  { Decidable_witness := eqb i1 i2}.
-Proof.
+Instance id_eqdec : forall (i1 i2: id), Decidable (eq i1 i2).
+Proof. intros i1 i2.
+  apply (Build_Decidable _ (eqb i1 i2)).
   pose proof (reflect_iff) as sth.
   symmetry.
   apply sth.
