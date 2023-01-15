@@ -11,5 +11,8 @@
 *.glob
 *.v.d
 *.vo
+*.vok
+*.vos
 *.aux
+.lia.cache
 \#*.*\#

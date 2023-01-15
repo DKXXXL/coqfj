@@ -117,9 +117,10 @@ Proof.
   destruct ys; crush.
   destruct i; crush.
   lets H1: H 0. simpl in H1. crush.
+  forwards*: H1; intros; try discriminate. crush.
   apply f_equal.
   eapply IHxs; eauto. intros.
-  lets H2: H (S j). crush.
+  lets H3: H (S j). crush.
 Qed.
 
 Lemma skipn_same : forall {A:Type} (xs ys: list A) i,
@@ -132,7 +133,7 @@ Proof.
   destruct ys; crush.
   destruct i; crush.
   lets ?H: (nth_error_same xs ys). apply H1. intros. 
-  lets ?H: H (S i). simpl in *. apply H2; eauto. intuition.
-  eapply IHxs; intros; auto.
+  lets ?H: H (S i). simpl in *. apply H2; eauto. intros; try discriminate. 
+  intuition. eapply IHxs; intros; auto.
   lets H2: H (S j); crush.
 Qed.
