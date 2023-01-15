@@ -1,8 +1,3 @@
-Require Import String.
-Local Open Scope string_scope.
-Require Import Datatypes.
-Require Import List.
-
 Require Import Relation_Definitions.
 Require Import FJ.Base.
 Require Import FJ.Syntax.

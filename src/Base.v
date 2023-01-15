@@ -1,3 +1,5 @@
+Require Export String.
+Open Scope string_scope.
 Require Export FJ.Lists.
 Require Export FJ.Util.Environment.
 Require Export FJ.Util.Id.
