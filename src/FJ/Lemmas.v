@@ -1,9 +1,17 @@
+Require Import String.
+Local Open Scope string_scope.
+Require Import Datatypes.
+Require Import List.
+
 Require Import Relation_Definitions.
 Require Import FJ.Base.
 Require Import FJ.Syntax.
 Require Import FJ.Semantics.
 
+
+
 Include FJ.Semantics.CTSanity.
+
 
 
 (* Auxiliary Lemmas *)
@@ -41,7 +49,7 @@ Hint Resolve methodDecl_OK.
 
 Lemma exists_mbody: forall C D Cs m,
   mtype(m, C) = Cs ~> D ->
-  exists xs e, mbody(m, C) = xs o e /\ NoDup (this :: xs) /\ length Cs = length xs.
+  exists xs e, mbody(m, C) = xs o e /\ NoDup (this :: xs) /\ List.length Cs = List.length xs.
 Proof.
   induction 1; eauto.
   - exists (refs fargs) e; repeat (split; eauto); crush.
@@ -424,7 +432,6 @@ Proof with eauto.
     eapply subtype_not_sub...
 Qed. 
 
-
 Lemma exists_subtyping : forall Gamma es es' Cs Ds i ei ei' C D C0,
   nth_error es i = Some ei ->
   nth_error es' i = Some ei' ->
@@ -439,7 +446,7 @@ Lemma exists_subtyping : forall Gamma es es' Cs Ds i ei ei' C D C0,
              Forall2 (ExpTyping Gamma) es' Cs'.
 Proof.
   intros. 
-  exists (firstn i Cs ++ cons C0 nil ++ skipn (S i) Cs).
+  exists (List.app (firstn i Cs)  (List.app (cons C0 nil) (skipn (S i) Cs))).
   gen i ei' H H0 H1 H2 H3 H5. gen es' Ds. induction H6 as [| ?e ?C ?es ?Cs].
   intros. crush.
   intros. 

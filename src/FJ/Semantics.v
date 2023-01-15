@@ -241,10 +241,10 @@ Module CTSanity.
 Hypothesis obj_notin_dom: find Object CT = None.
 Hint Rewrite obj_notin_dom.
 
-Hypothesis sub_inCT_inv: forall C D,
+(* Hypothesis sub_inCT_inv: forall C D,
   C <: D ->
   C <> Object ->
-  exists D' Fs noDupfs K Ms noDupMds, find C CT = Some (CDecl C D' Fs noDupfs K Ms noDupMds).
+  exists D' Fs noDupfs K Ms noDupMds, find C CT = Some (CDecl C D' Fs noDupfs K Ms noDupMds). *)
 
 Hypothesis antisym_subtype:
   antisymmetric _ Subtype.
