@@ -410,7 +410,8 @@ Proof.
 Qed.
 
 
-
+(* This following is purely wrong, 
+  recall ClassName = id, so it is impossible we can find   *)
 (* Lemma subtype_wf: forall D,
   D <> Object ->
   exists E Fs noDupfs K Ms noDupMds, D <: E /\ find E CT = Some (CDecl E Object Fs noDupfs K Ms noDupMds).
@@ -423,6 +424,9 @@ Proof.
   exists x. do 5 eexists; split; eauto.
   exists C; do 5 eexists; split; eauto.
 Qed. *)
+
+Module subtype_dec.
+
 
 
 (* The heart problem is to prove this *)
