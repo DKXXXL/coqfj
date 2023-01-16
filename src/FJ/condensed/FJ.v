@@ -427,7 +427,7 @@ Qed. *)
 
 Module subtype_dec.
 
-
+End subtype_dec.
 
 (* The heart problem is to prove this *)
 Lemma dec_subtype: forall C D,
