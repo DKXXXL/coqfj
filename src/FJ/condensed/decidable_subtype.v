@@ -364,7 +364,10 @@ Module CTSanity.
 Inductive WFCT : [ClassDecl] -> Prop :=
   | wfct_nil : WFCT nil 
   | wfct_cons:
-      forall C D Fs noDupfs K Ms noDupMds Cfargs Dfargs fdecl
+      forall C D Fs noDupfs K Ms noDupMds l,
+        (D = Object \/ find D l <> None) -> (* D exists in the list *)
+        WFCT l ->
+        WFCT ((CDecl C D Fs noDupfs K Ms noDupMds)::l).
 
 (* This following one is easy to verify *)
 Hypothesis obj_notin_dom: find Object CT = None.
@@ -389,10 +392,6 @@ Admitted.
 Hint Resolve ClassesOK.
 
 
-(* This following one is a bit hard ... induction on what? 
-    maybe I should make Subtype  *)
-Theorem antisym_subtype:
-    antisymmetric _ Subtype.
 
 Lemma subtype_obj_obj: forall C,
   Object <: C ->
@@ -416,27 +415,30 @@ Qed.
 Module subtype_dec.
 (* A more proof-relevant subtype *)
 Inductive nSubtype (CT : _) : [ClassName] -> ClassName -> ClassName -> Prop :=
-  | nS_Refl: forall C: ClassName, nSubtype (C :: nil) C C
+  | nS_Refl: forall C: ClassName, nSubtype CT (C :: nil) C C
   | nS_Decl: forall C D E fs noDupfs K mds noDupMds trace,
     find C CT = Some (CDecl C D fs noDupfs K mds noDupMds ) ->
-    nSubtype trace D E ->
-    nSubtype (C::trace) C E.
+    nSubtype CT trace D E ->
+    nSubtype CT (C::trace) C E.
+
+
+
 
 Hint Constructors nSubtype.
 
 Lemma nSubtype__Subtype:
   forall A B trace,
-    nSubtype trace A B -> Subtype A B.
+    nSubtype CT trace A B -> Subtype A B.
 intros A B trace h.
 induction h; intros; subst; eauto.
 Qed.
 
 Lemma nSubtype_trans:
   forall {A B t1},
-  nSubtype t1 A B ->
+  nSubtype CT t1 A B ->
     forall {C t2},
-    nSubtype t2 B C ->
-    exists t, nSubtype t A C.
+    nSubtype CT t2 B C ->
+    exists t, nSubtype CT t A C.
   intros A B t1 h.
   induction h; intros; subst; eauto.
   destruct (IHh _ _ H0).  eauto.
@@ -444,52 +446,58 @@ Qed.
 
 Lemma Subtype__nSubtype:
   forall A B,
-  A <: B -> (exists trace, nSubtype trace A B).
+  A <: B -> (exists trace, nSubtype CT trace A B).
 intros A B h. induction h; intros; subst; eauto.
 destruct IHh1 as [t1 hh1].
 destruct IHh2 as [t2 hh2].
 forwards*: (nSubtype_trans hh1 hh2).
 Qed.
 
+(* This following one is a bit hard ... induction on what? 
+    since now we have Subtype equivalence to nSubType
+      we can induction on nSubtype now *)
+Theorem antisym_subtype:
+    antisymmetric _ Subtype.
+Admitted.
 
+(* All of the CT apperances in nSubType in the following
+    might be generalized *)
 
 Theorem nSubtype_unique':
   forall A B t1, 
-    nSubtype t1 A B ->
+    nSubtype CT t1 A B ->
     forall C t2,
-    nSubtype t2 A C ->
+    nSubtype CT t2 A C ->
     t1 = t2.
-intros A B t1 h.
-induction h; intros; subst; eauto.
-admit.
-induction H0; intros; subst; eauto. 
+Admitted.
+
 
 Theorem nSubtype_unique:
   forall A B t1 t2, 
-    nSubtype t1 A B ->
-    nSubtype t2 A B ->
+    nSubtype CT t1 A B ->
+    nSubtype CT t2 A B ->
     t1 = t2.
-intros A B t1 t2 h1. generalize dependent t2.
-induction h1; intros; subst; eauto.
-
-admit. inversion H; subst; eauto.  
-
+  intros; eauto using nSubtype_unique'.
+Qed.
+ 
 
 
-Parameter nSubtype_trace:
+
+Lemma nSubtype_trace:
   forall A,
     find A CT <> None -> 
-    exists t, nSubtype t A Object.
+    exists t, nSubtype CT t A Object.
+Admitted.
 
 Lemma nSubtype_trace1:
   forall A B t,
-    A <: B -> nSubtype t A Object -> In B t.
+    A <: B -> nSubtype CT t A Object -> In B t.
 (* Use uniqueness, since B <: Object *)
 Admitted.
 
 Lemma nSubtype_trace2:
   forall A B t,
-    nSubtype t A Object -> In B t -> exists t', nSubtype t' A B.
+    nSubtype CT t A Object -> In B t -> exists t', nSubtype CT t' A B.
 Admitted.
 
 Lemma dec_subtype': forall C,
@@ -505,8 +513,44 @@ destruct (nSubtype_trace2 C D tr); eauto. left. eapply nSubtype__Subtype; eauto.
 right; intros H. forwards*: (nSubtype_trace1 C D tr).
 Qed.
 
-Lemma nonexistent_
+Lemma nonexistent_nonsubtype1:
+  forall C D CT tr,
+    find C CT = None ->
+    C <> Object ->
+    C <> D ->
+    ~ nSubtype CT tr C D.
+  intros C D CT tr h1 h2 h3 h4.
+  generalize dependent h1.
+  generalize dependent h2.
+  generalize dependent h3.
+  induction h4; intros; subst; eauto.
+  rewrite H in *; try discriminate.
+Qed.
 
+
+(* Lemma superClass_in_dom2: forall C D,
+  C <: D ->
+  D <> Object ->
+  exists D0 Fs0 noDupfs0 K0 Ms0 noDupMds0, find D CT = Some (CDecl D D0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
+Admitted. *)
+
+Lemma nonexistent_nonsubtype2:
+  forall C D CT tr,
+    find D CT = None ->
+    D <> Object ->
+    C <> D ->
+    ~ nSubtype CT tr C D.
+  intros C D CT tr h1 h2 h3 h4.
+  generalize dependent h1.
+  generalize dependent h2.
+  generalize dependent h3.
+  induction h4; intros; subst; eauto.
+(* This is provable using superClass_in_dom and WFCT *)
+(* if D = Object, then E = Object
+   if D <> Object, then find D CT = Some ...
+    then by WFCT, E = Object or find E CT <> None
+      Contradiction *)
+Abort.
 
 End subtype_dec.
 
