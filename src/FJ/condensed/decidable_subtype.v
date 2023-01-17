@@ -4,6 +4,13 @@ Require Import FJ.Base.
 
 Notation "'[' X ']'" := (list X) (at level 40).
 
+(* This file is mainly showing, 
+  1. WFCT is enough to prove all the hypothesis
+  2. WFCT is itself decidable
+  
+  thus all axiomatization of "valid CT" can be approximately decidable
+  *)
+
 (* We could use Inductive for ClassNames and Vars, 
  * but would make the other definitions cumbersome to deal with 
  * the special names Object and this.
@@ -369,16 +376,34 @@ Inductive WFCT : [ClassDecl] -> Prop :=
         WFCT l ->
         WFCT ((CDecl C D Fs noDupfs K Ms noDupMds)::l).
 
-(* This following one is easy to verify *)
-Hypothesis obj_notin_dom: find Object CT = None.
-Hint Rewrite obj_notin_dom.
 
-(* This one is actually also easy to verify
-    the essence is to make sure CT is acyclic *)
+Module WFCT_DEC.
+
+Theorem wfct_dec :
+  forall CT,
+    {WFCT CT} + {~WFCT CT}.
+Admitted.
+
+End WFCT_DEC.
+
+(* This following is easy to verify using wfct_dec *)
+
 Hypothesis wfct : WFCT CT.
 
 
-(* The following two is induction on CT *)
+(* Now we need to prove that the above wfct can imply all the following hypothesis below *)
+
+(* This following one is easy to verify, by easily compute both sides *)
+Lemma obj_notin_dom: find Object CT = None.
+Admitted.
+Hint Rewrite obj_notin_dom.
+
+(* This should be harded to verify  *)
+Theorem antisym_subtype:
+  antisymmetric _ Subtype.
+Admitted.
+
+(* This following two should be provable by enumerating/induction on CT*)
 Theorem superClass_in_dom: forall C D Fs noDupfs K Ms noDupMds,
   find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
   D <> Object ->
@@ -410,160 +435,16 @@ Proof.
   induction H; crush.
 Qed.
 
+(* This following is directly implied by LEM because
+    this decidable is not the algorithmic one  *)
+Axiom em : forall p : Prop, p \/ ~p.
 
-
-Module subtype_dec.
-(* A more proof-relevant subtype *)
-Inductive nSubtype (CT : _) : [ClassName] -> ClassName -> ClassName -> Prop :=
-  | nS_Refl: forall C: ClassName, nSubtype CT (C :: nil) C C
-  | nS_Decl: forall C D E fs noDupfs K mds noDupMds trace,
-    find C CT = Some (CDecl C D fs noDupfs K mds noDupMds ) ->
-    nSubtype CT trace D E ->
-    nSubtype CT (C::trace) C E.
-
-
-
-
-Hint Constructors nSubtype.
-
-Lemma nSubtype__Subtype:
-  forall A B trace,
-    nSubtype CT trace A B -> Subtype A B.
-intros A B trace h.
-induction h; intros; subst; eauto.
-Qed.
-
-Lemma nSubtype_trans:
-  forall {A B t1},
-  nSubtype CT t1 A B ->
-    forall {C t2},
-    nSubtype CT t2 B C ->
-    exists t, nSubtype CT t A C.
-  intros A B t1 h.
-  induction h; intros; subst; eauto.
-  destruct (IHh _ _ H0).  eauto.
-Qed. 
-
-Lemma Subtype__nSubtype:
-  forall A B,
-  A <: B -> (exists trace, nSubtype CT trace A B).
-intros A B h. induction h; intros; subst; eauto.
-destruct IHh1 as [t1 hh1].
-destruct IHh2 as [t2 hh2].
-forwards*: (nSubtype_trans hh1 hh2).
-Qed.
-
-(* This following one is a bit hard ... induction on what? 
-    since now we have Subtype equivalence to nSubType
-      we can induction on nSubtype now *)
-Theorem antisym_subtype:
-    antisymmetric _ Subtype.
-Admitted.
-
-(* All of the CT apperances in nSubType in the following
-    might be generalized *)
-
-Theorem nSubtype_unique':
-  forall A B t1, 
-    nSubtype CT t1 A B ->
-    forall C t2,
-    nSubtype CT t2 A C ->
-    t1 = t2.
-Admitted.
-
-
-Theorem nSubtype_unique:
-  forall A B t1 t2, 
-    nSubtype CT t1 A B ->
-    nSubtype CT t2 A B ->
-    t1 = t2.
-  intros; eauto using nSubtype_unique'.
-Qed.
- 
-
-
-
-Lemma nSubtype_trace:
-  forall A,
-    find A CT <> None -> 
-    exists t, nSubtype CT t A Object.
-Admitted.
-
-Lemma nSubtype_trace1:
-  forall A B t,
-    A <: B -> nSubtype CT t A Object -> In B t.
-(* Use uniqueness, since B <: Object *)
-Admitted.
-
-Lemma nSubtype_trace2:
-  forall A B t,
-    nSubtype CT t A Object -> In B t -> exists t', nSubtype CT t' A B.
-Admitted.
-
-Lemma dec_subtype': forall C,
-  find C CT <> None ->
-  forall D,
+(* i.e. the following is
+forall C D, C <: D \/ ~ C <: D *)
+Theorem LEM_subtype: forall C D,
   decidable (Subtype C D).
-unfold decidable.
-intros C h. destruct (nSubtype_trace C h) as [tr hh].
-intros D.
-(* Now we check if D is in tr *)
-edestruct (in_dec beq_id_dec D tr).
-destruct (nSubtype_trace2 C D tr); eauto. left. eapply nSubtype__Subtype; eauto.
-right; intros H. forwards*: (nSubtype_trace1 C D tr).
-Qed.
-
-Lemma nonexistent_nonsubtype1:
-  forall C D CT tr,
-    find C CT = None ->
-    C <> Object ->
-    C <> D ->
-    ~ nSubtype CT tr C D.
-  intros C D CT tr h1 h2 h3 h4.
-  generalize dependent h1.
-  generalize dependent h2.
-  generalize dependent h3.
-  induction h4; intros; subst; eauto.
-  rewrite H in *; try discriminate.
-Qed.
-
-
-(* Lemma superClass_in_dom2: forall C D,
-  C <: D ->
-  D <> Object ->
-  exists D0 Fs0 noDupfs0 K0 Ms0 noDupMds0, find D CT = Some (CDecl D D0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
-Admitted. *)
-
-Lemma nonexistent_nonsubtype2:
-  forall C D CT tr,
-    find D CT = None ->
-    D <> Object ->
-    C <> D ->
-    ~ nSubtype CT tr C D.
-  intros C D CT tr h1 h2 h3 h4.
-  generalize dependent h1.
-  generalize dependent h2.
-  generalize dependent h3.
-  induction h4; intros; subst; eauto.
-(* This is provable using superClass_in_dom and WFCT *)
-(* if D = Object, then E = Object
-   if D <> Object, then find D CT = Some ...
-    then by WFCT, E = Object or find E CT <> None
-      Contradiction *)
-Abort.
-
-End subtype_dec.
-
-(* The heart problem is to prove this *)
-Lemma dec_subtype: forall C D,
-  decidable (Subtype C D).
-Proof.
-  intros. unfold decidable.
-  destruct beq_id_dec with C D. subst; eauto.
-  destruct beq_id_dec with C Object. subst. right; apply sub_not_obj;auto.
-  destruct find_dec with CT C. destruct e. gen H. gen C. gen D.
-  induction CT; intros. inversion H. destruct beq_id_dec with C (ref a); subst; auto.
-Admitted.
+intros. unfold decidable.
+eapply em. Qed.
 
 End CTSanity.
 

@@ -2,8 +2,6 @@ Require Import String.
 Require Import FJ.Lists.
 Require Import FJ.Base.
 
-Search (_ \/ ~_).
-
 Notation "'[' X ']'" := (list X) (at level 40).
 
 (* We could use Inductive for ClassNames and Vars, 
@@ -11,10 +9,18 @@ Notation "'[' X ']'" := (list X) (at level 40).
  * the special names Object and this.
  * ClassNames are our types.
  *)
+
+
 Definition ClassName := id.
 (* Given a ClassTable, 
     the programmer needs to specify which ID is the Object *)
 Parameter Object: ClassName.
+
+Definition InterfaceName := id.
+
+Inductive ty : Set :=
+  | class : ClassName -> ty 
+  | interface : InterfaceName -> ty.
 
 (* Vars must appear only inside methods body *)
 Definition Var := id.
@@ -26,9 +32,9 @@ Inductive Argument :=
 
 (* FormalArg and FieldDecl is a ClassName (i.e. a type) and an id *)
 Inductive FormalArg :=
-  | FArg : ClassName -> id -> FormalArg.
+  | FArg : ty -> id -> FormalArg.
 Inductive FieldDecl :=
-  | FDecl : ClassName -> id -> FieldDecl.
+  | FDecl : ty -> id -> FieldDecl.
 
 (* The class Referable essentialy means I can use the ref function
  * to retrieve the id of a value.
@@ -47,9 +53,9 @@ Instance FieldRef : Referable FieldDecl :={
 }.
 
 (* fargType and fieldType are a means to retrieve the Type of the declarations *)
-Definition fargType (f: FormalArg):ClassName := 
+Definition fargType (f: FormalArg):ty := 
   match f with FArg t _ => t end.
-Definition fieldType (f: FieldDecl): ClassName := 
+Definition fieldType (f: FieldDecl): ty := 
   match f with FDecl t _ => t end.
 
 (* Our expressions are Variables,
@@ -62,7 +68,7 @@ Inductive Exp : Type :=
   | ExpVar : Var -> Exp
   | ExpFieldAccess : Exp -> id -> Exp
   | ExpMethodInvoc : Exp -> id -> [Exp] -> Exp
-  | ExpCast : ClassName -> Exp -> Exp
+  | ExpCast : ty -> Exp -> Exp
   | ExpNew : id -> [Exp] -> Exp.
 
 Inductive Assignment :=
@@ -78,19 +84,20 @@ Inductive Assignment :=
 Inductive Constructor :=
   | KDecl : id -> [FormalArg] -> [Argument] -> [Assignment] -> Constructor.
 
-
+Inductive MethodTy :=
+  | mty : id -> ty -> forall (fargs: [FormalArg]), NoDup (this :: refs fargs)  -> MethodTy.
 (* Method declaration \texttt{C~m~(\={C}~\={x})\ \{return~e;\}} 
  * introduces a method \texttt{m} of return type \texttt{C} with arguments \texttt{\={C}~\={x}} and body \texttt{e}.
  * Method declarations should only appear inside a class declaration.
  *)
 Inductive MethodDecl :=
-  | MDecl : ClassName -> id -> forall (fargs: [FormalArg]), NoDup (this :: refs fargs) -> Exp -> MethodDecl.
+  | MDecl :  MethodTy -> Exp -> MethodDecl.
 
 
 Instance MDeclRef : Referable MethodDecl :={
   ref mdecl := 
     match mdecl with 
-   | MDecl _ id _ _ _ => id end
+   | MDecl (mty id _ _ _) _ => id end
 }.
 
 (* A class declaration \texttt{class\ C~extends~D\ \{\={C} \={f}; K \={M}\}} 
@@ -101,22 +108,34 @@ Instance MDeclRef : Referable MethodDecl :={
  * Method override in \ac{FJ} is basically method rewrite. 
  * Methods are uniquely identified by its name, i.e. overload is not supported.
  *)
-Inductive ClassDecl:=
-  | CDecl: id -> ClassName -> 
-    forall (fDecls:[FieldDecl]), NoDup (refs fDecls) -> Constructor -> 
-    forall (mDecls:[MethodDecl]), NoDup (refs mDecls) -> ClassDecl.
+(* Featherweight Java Level (without interface) *)
+Overridable EXT1 : Set = []. 
+Overridable deafult_ext1 : EXT1.
 
-Instance CDeclRef : Referable ClassDecl :={
+(* This intermediate version I feel safe about the pattern matching *)
+
+(* The automatic version,  *)
+
+Inductive TypeDecl:=
+  | CDecl: ClassName -> ClassName ->
+    forall (fDecls:[FieldDecl]), NoDup (refs fDecls) -> Constructor -> 
+    forall (mDecls:[MethodDecl]), NoDup (refs mDecls) -> TypeDecl
+  | IDecl: InterfaceName -> [MethodTy] -> TypeDecl.
+
+Instance TypeDeclRef : Referable TypeDecl :={
   ref cdecl := 
     match cdecl with 
-   | CDecl id _ _ _ _ _ _ => id end
+   | CDecl id _ _ _ _ _ _ _ => id 
+   | IDecl id _ => id end
 }.
 
-Inductive Program :=
-  | CProgram : forall (cDecls: [ClassDecl]), NoDup (refs cDecls) -> Exp -> Program.
 
-(* We assume a fixed ClassTable *)
-Parameter CT: [ClassDecl].
+
+Inductive Program :=
+  | CProgram : forall (cDecls: [TypeDecl]), NoDup (refs cDecls) -> Exp -> Program.
+
+(* We assume a fixed Class/InterfaceTable *)
+Parameter CT: [TypeDecl].
 
 Require Import Relations Decidable.
 
@@ -126,27 +145,30 @@ Reserved Notation "C '<:' D " (at level 40).
     ClassTables
   in the following section we need to specify the restriction 
     on the ClassTables *)
-Inductive Subtype : id -> ClassName -> Prop :=
-  | S_Refl: forall C: ClassName, C <: C
-  | S_Trans: forall (C D E: ClassName), 
+Inductive Subtype : ty -> ty -> Prop :=
+  | S_Refl: forall C, C <: C
+  | S_Trans: forall C D E, 
     C <: D -> 
     D <: E -> 
     C <: E
-  | S_Decl: forall C D fs noDupfs K mds noDupMds,
-    find C CT = Some (CDecl C D fs noDupfs K mds noDupMds ) ->
-    C <: D
+  | S_CDecl: forall C D ints fs noDupfs K mds noDupMds,
+    find C CT = Some (CDecl C D ints fs noDupfs K mds noDupMds ) ->
+    (class C) <: (class D)
+  | S_IDecl: forall C i l,
+    find C CT = Some (IDecl i l) ->
+    (class C) <: (interface i)
 where "C '<:' D" := (Subtype C D).
 Hint Constructors Subtype.
 
 Tactic Notation "subtype_cases" tactic(first) ident(c) :=
   first;
-  [ Case_aux c "S_Refl" | Case_aux c "S_Trans" 
-  | Case_aux c "S_Decl"].
+  [ Case_aux c "S_Refl"  | Case_aux c "S_Trans" 
+  | Case_aux c "S_CDecl" | Case_aux c "S_IDecl"].
 
 Reserved Notation "'mtype(' m ',' D ')' '=' c '~>' c0" (at level 40, c at next level).
 
 Inductive m_type (m: id) (C: ClassName) (Bs: [ClassName]) (B: ClassName) : Prop:=
-  | mty_ok : forall D Fs K Ms noDupfs noDupMds fargs noDupfargs e,
+  | mty_class : forall D Fs K Ms noDupfs noDupMds fargs noDupfargs e,
               find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds)->
               find m Ms = Some (MDecl B m fargs noDupfargs e) ->
               map fargType fargs = Bs ->
@@ -161,7 +183,7 @@ Inductive m_type (m: id) (C: ClassName) (Bs: [ClassName]) (B: ClassName) : Prop:
 
 Tactic Notation "mtype_cases" tactic(first) ident(c) :=
   first;
-  [ Case_aux c "mty_ok" | Case_aux c "mty_no_override"].
+  [ Case_aux c "mty_class" | Case_aux c "mty_no_override"].
 
 Inductive m_body (m: id) (C: ClassName) (xs: [id]) (e: Exp) : Prop:=
   | mbdy_ok : forall D Fs K Ms noDupfs noDupMds C0 fargs noDupfargs,
@@ -369,7 +391,6 @@ Hint Rewrite obj_notin_dom.
 
 (* This is to make sure ClassTable doesn't provide
     a cicular dependency *)
-(* This is the only challenging one to prove, others can be proved by easily enumeration, but this one cannot *)
 Hypothesis antisym_subtype:
   antisymmetric _ Subtype.
 
@@ -401,18 +422,9 @@ Proof.
   induction H; crush.
 Qed.
 
-(* This following is directly implied by LEM because
-    this decidable is not the algorithmic one
-  i.e. the  *)
-Axiom em : forall p : Prop, p \/ ~p.
-
-(* i.e. the following is
-forall C D, C <: D \/ ~ C <: D *)
-Theorem LEM_subtype: forall C D,
+(* The heart of problem is to prove this *)
+Parameter dec_subtype: forall C D,
   decidable (Subtype C D).
-intros. unfold decidable.
-eapply em. Qed.
-
 
 (* All the nontrivial postulation are located in CTSanity
     and we will focus on dealing them in decidable_subtype.v
@@ -888,10 +900,10 @@ Proof with eauto.
   Case "T_DCast".
     exists C; split; auto. simpl.
     destruct IHExpTyping as [E]. destruct H6.
-    destruct LEM_subtype with E C.
+    destruct dec_subtype with E C.
     eapply T_UCast in H7...
     destruct beq_id_dec with E C. rewrite e in H8; false; apply H8; auto.
-    destruct LEM_subtype with C E.
+    destruct dec_subtype with C E.
     eapply T_DCast in H7...
     eapply T_SCast in H7...
     apply STUPID_STEP.
@@ -1105,9 +1117,9 @@ Proof with eauto.
     assert (C0 = C) by (inversion H; crush); subst.
     inversion H; subst; eapply (IHComputation) in H3; destruct H3 as [C0']; destruct H1. eauto.
     rename D into C0. clear H5.
-    destruct LEM_subtype with C0' C.
+    destruct dec_subtype with C0' C.
     eapply T_UCast in H2; eauto.
-    destruct LEM_subtype with C C0'.
+    destruct dec_subtype with C C0'.
     eapply T_DCast in H2; eauto. crush.
     eapply T_SCast in H2; eauto. apply STUPID_STEP.
     rename D into C0. clear H6.
