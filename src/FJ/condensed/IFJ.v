@@ -86,6 +86,12 @@ Inductive Constructor :=
 
 Inductive MethodTy :=
   | mty : id -> ty -> forall (fargs: [FormalArg]), NoDup (this :: refs fargs)  -> MethodTy.
+Instance MethodTyRef : Referable MethodTy :={
+  ref mdecl := 
+    match mdecl with 
+   | (mty id _ _ _)  => id end
+}.
+
 (* Method declaration \texttt{C~m~(\={C}~\={x})\ \{return~e;\}} 
  * introduces a method \texttt{m} of return type \texttt{C} with arguments \texttt{\={C}~\={x}} and body \texttt{e}.
  * Method declarations should only appear inside a class declaration.
@@ -109,15 +115,15 @@ Instance MDeclRef : Referable MethodDecl :={
  * Methods are uniquely identified by its name, i.e. overload is not supported.
  *)
 (* Featherweight Java Level (without interface) *)
-Overridable EXT1 : Set = []. 
-Overridable deafult_ext1 : EXT1.
+(* Overridable EXT1 : Set = []. 
+Overridable deafult_ext1 : EXT1. *)
 
 (* This intermediate version I feel safe about the pattern matching *)
 
 (* The automatic version,  *)
 
 Inductive TypeDecl:=
-  | CDecl: ClassName -> ClassName ->
+  | CDecl: ClassName -> ClassName -> [InterfaceName] ->
     forall (fDecls:[FieldDecl]), NoDup (refs fDecls) -> Constructor -> 
     forall (mDecls:[MethodDecl]), NoDup (refs mDecls) -> TypeDecl
   | IDecl: InterfaceName -> [MethodTy] -> TypeDecl.
@@ -167,23 +173,29 @@ Tactic Notation "subtype_cases" tactic(first) ident(c) :=
 
 Reserved Notation "'mtype(' m ',' D ')' '=' c '~>' c0" (at level 40, c at next level).
 
-Inductive m_type (m: id) (C: ClassName) (Bs: [ClassName]) (B: ClassName) : Prop:=
-  | mty_class : forall D Fs K Ms noDupfs noDupMds fargs noDupfargs e,
-              find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds)->
-              find m Ms = Some (MDecl B m fargs noDupfargs e) ->
+Inductive m_type (m: id) : ty -> [ty] -> ty -> Prop:=
+  | mty_class : forall C D Fs ints K Ms noDupfs noDupMds fargs noDupfargs mname e Bs B,
+              find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds)->
+              find m Ms = Some (MDecl (mty mname B fargs noDupfargs) e) ->
               map fargType fargs = Bs ->
-              mtype(m, C) = Bs ~> B
-  | mty_no_override: forall D Fs K Ms noDupfs noDupMds,
-              find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
+              mtype(m, class C) = Bs ~> B
+  | mty_no_override: forall C D Fs ints K Ms noDupfs noDupMds Bs B,
+              find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
               find m Ms = None ->
-              mtype(m, D) = Bs ~> B ->
-              mtype(m, C) = Bs ~> B
+              mtype(m, class D) = Bs ~> B ->
+              mtype(m, class C) = Bs ~> B
+  | mty_interface : forall C Ms fargs noDup1 mname Bs B,
+             find C CT = Some (IDecl C Ms)->
+             find m Ms = Some (mty mname B fargs noDup1) ->
+             map fargType fargs = Bs ->
+             mtype(m, interface C) = Bs ~> B
   where "'mtype(' m ',' D ')' '=' cs '~>' c0"
         := (m_type m D cs c0).
 
 Tactic Notation "mtype_cases" tactic(first) ident(c) :=
   first;
-  [ Case_aux c "mty_class" | Case_aux c "mty_no_override"].
+  [ Case_aux c "mty_class" | Case_aux c "mty_no_override"
+  | Case_aux c "mty_interface" ].
 
 Inductive m_body (m: id) (C: ClassName) (xs: [id]) (e: Exp) : Prop:=
   | mbdy_ok : forall D Fs K Ms noDupfs noDupMds C0 fargs noDupfargs,
