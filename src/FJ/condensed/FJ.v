@@ -370,14 +370,6 @@ Hint Rewrite obj_notin_dom.
 Hypothesis antisym_subtype:
   antisymmetric _ Subtype.
 
-(* Hypothesis sub_inCT_inv: forall C D,
-  C <: D ->
-  C <> Object ->
-  exists D' Fs noDupfs K Ms noDupMds, find C CT = Some (CDecl C D' Fs noDupfs K Ms noDupMds). *)
-
-
-
-
 
 Hypothesis superClass_in_dom: forall C D Fs noDupfs K Ms noDupMds,
   find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
@@ -406,115 +398,19 @@ Proof.
   induction H; crush.
 Qed.
 
-
-
-Module subtype_dec.
-(* A more proof-relevant subtype *)
-Inductive nSubtype : [ClassName] -> ClassName -> ClassName -> Prop :=
-  | nS_Refl: forall C: ClassName, nSubtype (C :: nil) C C
-  | nS_Decl: forall C D E fs noDupfs K mds noDupMds trace,
-    find C CT = Some (CDecl C D fs noDupfs K mds noDupMds ) ->
-    nSubtype trace D E ->
-    nSubtype (C::trace) C E.
-
-Hint Constructors nSubtype.
-
-Lemma nSubtype__Subtype:
-  forall A B trace,
-    nSubtype trace A B -> Subtype A B.
-intros A B trace h.
-induction h; intros; subst; eauto.
-Qed.
-
-Lemma nSubtype_trans:
-  forall {A B t1},
-  nSubtype t1 A B ->
-    forall {C t2},
-    nSubtype t2 B C ->
-    exists t, nSubtype t A C.
-  intros A B t1 h.
-  induction h; intros; subst; eauto.
-  destruct (IHh _ _ H0).  eauto.
-Qed. 
-
-Lemma Subtype__nSubtype:
-  forall A B,
-  A <: B -> (exists trace, nSubtype trace A B).
-intros A B h. induction h; intros; subst; eauto.
-destruct IHh1 as [t1 hh1].
-destruct IHh2 as [t2 hh2].
-forwards*: (nSubtype_trans hh1 hh2).
-Qed.
-
-
-
-Theorem nSubtype_unique':
-  forall A B t1, 
-    nSubtype t1 A B ->
-    forall C t2,
-    nSubtype t2 A C ->
-    t1 = t2.
-intros A B t1 h.
-induction h; intros; subst; eauto.
-admit.
-induction H0; intros; subst; eauto. 
-
-Theorem nSubtype_unique:
-  forall A B t1 t2, 
-    nSubtype t1 A B ->
-    nSubtype t2 A B ->
-    t1 = t2.
-intros A B t1 t2 h1. generalize dependent t2.
-induction h1; intros; subst; eauto.
-
-admit. inversion H; subst; eauto.  
-
-
-
-Parameter nSubtype_trace:
-  forall A,
-    find A CT <> None -> 
-    exists t, nSubtype t A Object.
-
-Lemma nSubtype_trace1:
-  forall A B t,
-    A <: B -> nSubtype t A Object -> In B t.
-(* Use uniqueness, since B <: Object *)
-Admitted.
-
-Lemma nSubtype_trace2:
-  forall A B t,
-    nSubtype t A Object -> In B t -> exists t', nSubtype t' A B.
-Admitted.
-
-Lemma dec_subtype': forall C,
-  find C CT <> None ->
-  forall D,
+(* The heart of problem is to prove this *)
+Parameter dec_subtype: forall C D,
   decidable (Subtype C D).
-unfold decidable.
-intros C h. destruct (nSubtype_trace C h) as [tr hh].
-intros D.
-(* Now we check if D is in tr *)
-edestruct (in_dec beq_id_dec D tr).
-destruct (nSubtype_trace2 C D tr); eauto. left. eapply nSubtype__Subtype; eauto.
-right; intros H. forwards*: (nSubtype_trace1 C D tr).
-Qed.
 
-Lemma nonexistent_
+(* All the nontrivial postulation are located in CTSanity
+    and we will focus on dealing them in decidable_subtype.v
 
+  these postulations, when I say them nontrivial, as we don't see 
+  a general way of proving a given [ClassDecl] satisfy these 5 postulation
 
-End subtype_dec.
-
-(* The heart problem is to prove this *)
-Lemma dec_subtype: forall C D,
-  decidable (Subtype C D).
-Proof.
-  intros. unfold decidable.
-  destruct beq_id_dec with C D. subst; eauto.
-  destruct beq_id_dec with C Object. subst. right; apply sub_not_obj;auto.
-  destruct find_dec with CT C. destruct e. gen H. gen C. gen D.
-  induction CT; intros. inversion H. destruct beq_id_dec with C (ref a); subst; auto.
-Admitted.
+  and thus decidable_subtype.v
+     is trying to give a general way to prove these stuff
+     *)
 
 End CTSanity.
 
