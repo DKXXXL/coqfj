@@ -69,7 +69,7 @@ Inductive Exp : Type :=
   | ExpFieldAccess : Exp -> id -> Exp
   | ExpMethodInvoc : Exp -> id -> [Exp] -> Exp
   | ExpCast : ty -> Exp -> Exp
-  | ExpNew : id -> [Exp] -> Exp.
+  | ExpNew : ClassName -> [Exp] -> Exp.
 
 Inductive Assignment :=
   | Assgnmt : Exp -> Exp -> Assignment.
@@ -198,22 +198,22 @@ Tactic Notation "mtype_cases" tactic(first) ident(c) :=
   | Case_aux c "mty_interface" ].
 
 Inductive m_body (m: id) (C: ClassName) (xs: [id]) (e: Exp) : Prop:=
-  | mbdy_ok : forall D Fs K Ms noDupfs noDupMds C0 fargs noDupfargs,
-              find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds)->
-              find m Ms = Some (MDecl C0 m fargs noDupfargs e) ->
+  | mbdy_ok : forall D ints Fs K Ms noDupfs noDupMds fargs  mty,
+              find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds)->
+              find m Ms = Some (MDecl mty e) ->
               refs fargs = xs ->
               m_body m C xs e
-  | mbdy_no_override: forall D Fs K Ms noDupfs noDupMds,
-              find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds)->
+  | mbdy_no_override: forall D ints Fs K Ms noDupfs noDupMds,
+              find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds)->
               find m Ms = None ->
               m_body m D xs e ->
               m_body m C xs e.
 Notation "'mbody(' m ',' D ')' '=' xs 'o' e" := (m_body m D xs e) (at level 40).
 
-Inductive fields : id -> [FieldDecl] -> Prop :=
+Inductive fields : ClassName -> [FieldDecl] -> Prop :=
  | F_Obj : fields Object nil
- | F_Decl : forall C D fs  noDupfs K mds noDupMds fs', 
-     find C CT = Some (CDecl C D fs noDupfs K mds noDupMds) ->
+ | F_Decl : forall C D ints fs  noDupfs K mds noDupMds fs', 
+     find C CT = Some (CDecl C D ints fs noDupfs K mds noDupMds) ->
      fields D fs' ->
      NoDup (refs (fs' ++ fs)) ->
      fields C (fs'++fs).
@@ -249,11 +249,11 @@ Notation stupid_warning := (Warning "stupid warning").
 Axiom STUPID_STEP : stupid_warning.
 
 Reserved Notation "Gamma '|--' x ':' C" (at level 60, x at next level).
-Inductive ExpTyping (Gamma: env ClassName) : Exp -> ClassName -> Prop :=
+Inductive ExpTyping (Gamma: env ty) : Exp -> ty -> Prop :=
   | T_Var : forall x C, get Gamma x = Some C -> 
                 Gamma |-- ExpVar x : C
   | T_Field: forall e0 C0 fs i Fi Ci fi,
-                Gamma |-- e0 : C0 ->
+                Gamma |-- e0 : (class C0) ->
                 fields C0 fs ->
                 nth_error fs i = Some Fi ->
                 Ci = fieldType Fi ->
@@ -270,7 +270,7 @@ Inductive ExpTyping (Gamma: env ClassName) : Exp -> ClassName -> Prop :=
                 Ds = map fieldType fs ->
                 Forall2 (ExpTyping Gamma) es Cs ->
                 Forall2 Subtype Cs Ds ->
-                Gamma |-- ExpNew C es : C
+                Gamma |-- ExpNew C es : (class C)
   | T_UCast : forall e0 D C,
                 Gamma |-- e0 : D ->
                 D <: C ->
@@ -308,7 +308,8 @@ Inductive Computation_step : Exp -> Exp -> Prop :=
             List.length ds = List.length xs ->
             ExpMethodInvoc (ExpNew C es) m ds ~>! [; ExpNew C es :: ds \ this :: xs;] e0
   | R_Cast : forall C D es,
-            C <: D ->
+            (* This is so weird *)
+            (class C) <: D ->
             ExpCast D (ExpNew C es) ~>! ExpNew C es
   where "e '~>!' e1" := (Computation_step e e1).
 Tactic Notation "computation_step_cases" tactic(first) ident(c) :=
@@ -368,28 +369,42 @@ Definition normal_form {X:Type} (R: relation X) (t: X) :=
   ~exists t', R t t'.
 
 
-Definition override (m: id) (D: ClassName) (Cs: [ClassName]) (C0: ClassName) :=
-    (forall Ds D0, mtype(m, D) = Ds ~> D0 -> (Ds = Cs /\ C0 = D0)).
+Definition assert_method_type (m: id) (D: ClassName) (Cs: [ty]) (C0: ty) :=
+    (forall Ds D0, mtype(m, class D) = Ds ~> D0 -> (Ds = Cs /\ C0 = D0)).
+
+Definition implement_interface (it : InterfaceName) (D: ClassName) :=
+  forall mtys rety Cs,
+  find it CT = Some (IDecl it mtys) ->
+    forall mname fargs nodfargs,
+      In (mty mname rety fargs nodfargs) mtys ->
+      map fargType fargs = Cs ->
+      assert_method_type mname D Cs rety.
+
+Definition implement_interfaces (its : [InterfaceName]) (D: ClassName) :=
+  forall it,
+    In it its ->
+    implement_interface it D.
 
 Inductive MType_OK : ClassName -> MethodDecl -> Prop :=
-  | T_Method : forall C D C0 E0 xs Cs e0 Fs noDupfs K Ms noDupMds fargs m noDupFargs,
-            nil extds (this :: xs) : (C :: Cs) |-- e0 : E0 ->
+  | T_Method : forall C D C0 E0 xs Cs e0 its Fs noDupfs  K Ms noDupMds fargs noDupFargs m,
+            nil extds (this :: xs) : (class C :: Cs) |-- e0 : E0 ->
             E0 <: C0 ->
-            find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
-            override m D Cs C0 ->
+            find C CT = Some (CDecl C D its Fs noDupfs K Ms noDupMds) ->
+            assert_method_type m D Cs C0 -> (* we only allow invariant *)
             map fargType fargs = Cs ->
             refs fargs = xs ->
-            find m Ms = Some (MDecl C0 m fargs noDupFargs e0) ->
-            MType_OK C (MDecl C0 m fargs noDupFargs e0).
+            find m Ms = Some (MDecl (mty m C0 fargs noDupFargs) e0) ->
+            MType_OK C (MDecl (mty m C0 fargs noDupFargs) e0).
 
-Inductive CType_OK: ClassDecl -> Prop :=
-  | T_Class : forall C D Fs noDupfs K Ms noDupMds Cfargs Dfargs fdecl,
+Inductive CType_OK: TypeDecl -> Prop :=
+  | T_Class : forall C D its Fs noDupfs K Ms noDupMds Cfargs Dfargs fdecl,
             K = KDecl C (Cfargs ++ Dfargs) (map Arg (refs Cfargs)) (zipWith Assgnmt (map (ExpFieldAccess (ExpVar this)) (refs Fs)) (map ExpVar (refs Fs))) ->
             fields D fdecl ->
             NoDup (refs (fdecl ++ Fs)) ->
             Forall (MType_OK C) (Ms) ->
-            find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
-            CType_OK (CDecl C D Fs noDupfs K Ms noDupMds).
+            find C CT = Some (CDecl C D its Fs noDupfs K Ms noDupMds) ->
+            CType_OK (CDecl C D its Fs noDupfs K Ms noDupMds).
+(* I think all interfaces will be well-typed *)
 
 (* Hypothesis for ClassTable sanity *)
 Module CTSanity.
@@ -407,31 +422,46 @@ Hypothesis antisym_subtype:
   antisymmetric _ Subtype.
 
 
-Hypothesis superClass_in_dom: forall C D Fs noDupfs K Ms noDupMds,
-  find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
+Hypothesis superClass_in_dom: forall C D ints Fs noDupfs K Ms noDupMds,
+  find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
   D <> Object ->
-  exists D0 Fs0 noDupfs0 K0 Ms0 noDupMds0, find D CT = Some (CDecl D D0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
+  exists D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0, 
+    find D CT = Some (CDecl D D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
 
-Hypothesis ClassesOK: forall C D Fs noDupfs K Ms noDupMds, 
-  find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
-  CType_OK (CDecl C D Fs noDupfs K Ms noDupMds).
+Hypothesis ClassesOK: forall C D ints Fs noDupfs K Ms noDupMds, 
+  find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
+  CType_OK (CDecl C D ints Fs noDupfs K Ms noDupMds).
 Hint Resolve ClassesOK.
 
 Lemma subtype_obj_obj: forall C,
-  Object <: C ->
+  (class Object) <: (class C) ->
   Object = C.
 Proof.
-  intros_all. remember Object as Obj.
+  assert (forall Obj CC,
+  Obj <: CC ->
+  Obj = class Object ->
+  CC = class Object); eauto.
+  intros Obj CC H.
   induction H; crush.
+  intros. forwards*: (H _ _ H0). injection H1; eauto.
 Qed.
 
 Lemma sub_not_obj: forall C,
   Object <> C ->
-  ~ Object <: C.
+  ~ (class Object) <: (class C).
 Proof.
   Hint Resolve subtype_obj_obj.
-  intros_all. remember Object as Obj.
-  induction H; crush.
+assert (forall Obj CC,
+  Obj <: CC ->
+  forall C,
+  Object <> C ->
+  Obj = class Object ->
+  CC = class C ->
+  False) as H.
+  intros Obj CC h. induction h; intros; subst;crush.
+  forwards*: subtype_obj_obj.
+
+  intros_all. forwards*:(H _ _ H1 _ H0).
 Qed.
 
 (* The heart of problem is to prove this *)
@@ -450,42 +480,45 @@ Parameter dec_subtype: forall C D,
 
 End CTSanity.
 
+(* Print Forall2.  *)
+
 Definition ExpTyping_ind' := 
-  fun (Gamma : env ClassName) (P : Exp -> ClassName -> Prop)
-  (f : forall (x : id) (C : ClassName), get Gamma x = Some C -> P (ExpVar x) C)
-  (f0 : forall (e0 : Exp) (C0 : ClassName) (fs : [FieldDecl]) (i : nat) (Fi : FieldDecl)
-          (Ci : ClassName) (fi : id),
-        Gamma |-- e0 : C0 ->
-        P e0 C0 ->
+  fun (Gamma : env ty) (P : Exp -> ty -> Prop)
+  (f : forall (x : id) (C : _), get Gamma x = Some C -> P (ExpVar x) C)
+  (f0 : forall (e0 : Exp) (C0 : _) (fs : [FieldDecl]) (i : nat) (Fi : FieldDecl)
+          (Ci : _) (fi : id),
+        Gamma |-- e0 : class C0 ->
+        P e0 (class C0) ->
         fields C0 fs ->
-        nth_error fs i = Some Fi -> Ci = fieldType Fi -> fi = ref Fi -> P (ExpFieldAccess e0 fi) Ci)
-  (f1 : forall (e0 : Exp) (C : ClassName) (Cs : [ClassName]) (C0 : ClassName) (Ds : [ClassName]) 
+        nth_error fs i = Some Fi -> Ci = fieldType Fi -> fi = ref Fi -> 
+        P (ExpFieldAccess e0 fi) Ci)
+  (f1 : forall (e0 : Exp) (C : _) (Cs : _) (C0 : _) (Ds : _) 
           (m : id) (es : [Exp]),
         Gamma |-- e0 : C0 ->
-        P e0 C0 ->
+        P e0 (C0) ->
         mtype( m, C0)= Ds ~> C ->
         Forall2 (ExpTyping Gamma) es Cs ->
         Forall2 Subtype Cs Ds -> 
         Forall2 P es Cs ->
         P (ExpMethodInvoc e0 m es) C)
-  (f2 : forall (C : id) (Ds Cs : [ClassName]) (fs : [FieldDecl]) (es : [Exp]),
+  (f2 : forall (C : id) (Ds Cs : _) (fs : [FieldDecl]) (es : [Exp]),
         fields C fs ->
         Ds = map fieldType fs ->
         Forall2 (ExpTyping Gamma) es Cs ->
         Forall2 Subtype Cs Ds -> 
         Forall2 P es Cs ->
-        P (ExpNew C es) C)
-  (f3 : forall (e0 : Exp) (D C : ClassName), Gamma |-- e0 : D -> P e0 D -> D <: C -> P (ExpCast C e0) C)
-  (f4 : forall (e0 : Exp) (C : id) (D : ClassName),
+        P (ExpNew C es) (class C))
+  (f3 : forall (e0 : Exp) (D C : _), Gamma |-- e0 : D -> P e0 D -> D <: C -> P (ExpCast C e0) C)
+  (f4 : forall (e0 : Exp) (C : _) (D : _),
         Gamma |-- e0 : D -> P e0 D -> C <: D -> C <> D -> P (ExpCast C e0) C)
-  (f5 : forall (e0 : Exp) (D C : ClassName),
+  (f5 : forall (e0 : Exp) (D C : _),
         Gamma |-- e0 : D -> P e0 D -> ~ D <: C -> ~ C <: D -> stupid_warning -> P (ExpCast C e0) C) =>
-fix F (e : Exp) (c : ClassName) (e0 : Gamma |-- e : c) {struct e0} : P e c :=
+fix F (e : Exp) (c : _) (e0 : Gamma |-- e : c) {struct e0} : P e c :=
   match e0 in (_ |-- e1 : c0) return (P e1 c0) with
   | T_Var _ x C e1 => f x C e1
-  | T_Field _ e1 C0 fs i Fi Ci fi e2 f6 e3 e4 e5 => f0 e1 C0 fs i Fi Ci fi e2 (F e1 C0 e2) f6 e3 e4 e5
+  | T_Field _ e1 C0 fs i Fi Ci fi e2 f6 e3 e4 e5 => f0 e1 C0 fs i Fi Ci fi e2 (F e1 (class C0) e2) f6 e3 e4 e5
   | T_Invk _ e1 C Cs C0 Ds m es e2 m0 f6 f7 => f1 e1 C Cs C0 Ds m es e2 (F e1 C0 e2) m0 f6 f7 
-          ((fix list_Forall_ind (es' : [Exp]) (Cs' : [ClassName]) 
+          ((fix list_Forall_ind (es' : [Exp]) (Cs' : _) 
             (map : Forall2 (ExpTyping Gamma) es' Cs'): 
                Forall2 P es' Cs' :=
             match map with
@@ -493,7 +526,7 @@ fix F (e : Exp) (c : ClassName) (e0 : Gamma |-- e : c) {struct e0} : P e c :=
             | (@Forall2_cons _ _ _ ex cx ees ccs H1 H2) => Forall2_cons ex cx (F ex cx H1) (list_Forall_ind ees ccs H2)
           end) es Cs f6)
   | T_New _ C Ds Cs fs es f6 e1 f7 f8 => f2 C Ds Cs fs es f6 e1 f7 f8
-          ((fix list_Forall_ind (es' : [Exp]) (Cs' : [ClassName]) 
+          ((fix list_Forall_ind (es' : [Exp]) (Cs' : _) 
             (map : Forall2 (ExpTyping Gamma) es' Cs'): 
                Forall2 P es' Cs' :=
             match map with
@@ -716,7 +749,7 @@ Ltac elim_eqs :=
 
 Ltac unify_override :=
   match goal with
-  | [H: override ?m ?D ?Cs ?C0, H1: mtype(?m, ?D) = ?Ds ~> ?D0 |- _ ] => destruct H with Ds D0; [exact H1 | subst; clear H]
+  | [H: assert_method_type ?m ?D ?Cs ?C0, H1: mtype(?m, ?D) = ?Ds ~> ?D0 |- _ ] => destruct H with Ds D0; [exact H1 | subst; clear H]
   end.
 
 Ltac unify_fields :=
