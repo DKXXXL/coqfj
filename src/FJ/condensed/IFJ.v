@@ -174,9 +174,9 @@ Tactic Notation "subtype_cases" tactic(first) ident(c) :=
 Reserved Notation "'mtype(' m ',' D ')' '=' c '~>' c0" (at level 40, c at next level).
 
 Inductive m_type (m: id) : ty -> [ty] -> ty -> Prop:=
-  | mty_class : forall C D Fs ints K Ms noDupfs noDupMds fargs noDupfargs mname e Bs B,
+  | mty_class : forall C D Fs ints K Ms noDupfs noDupMds fargs noDupfargs e Bs B,
               find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds)->
-              find m Ms = Some (MDecl (mty mname B fargs noDupfargs) e) ->
+              find m Ms = Some (MDecl (mty m B fargs noDupfargs) e) ->
               map fargType fargs = Bs ->
               mtype(m, class C) = Bs ~> B
   | mty_no_override: forall C D Fs ints K Ms noDupfs noDupMds Bs B,
@@ -184,9 +184,9 @@ Inductive m_type (m: id) : ty -> [ty] -> ty -> Prop:=
               find m Ms = None ->
               mtype(m, class D) = Bs ~> B ->
               mtype(m, class C) = Bs ~> B
-  | mty_interface : forall C Ms fargs noDup1 mname Bs B,
+  | mty_interface : forall C Ms fargs noDup1 Bs B,
              find C CT = Some (IDecl C Ms)->
-             find m Ms = Some (mty mname B fargs noDup1) ->
+             find m Ms = Some (mty m B fargs noDup1) ->
              map fargType fargs = Bs ->
              mtype(m, interface C) = Bs ~> B
   where "'mtype(' m ',' D ')' '=' cs '~>' c0"
@@ -198,9 +198,9 @@ Tactic Notation "mtype_cases" tactic(first) ident(c) :=
   | Case_aux c "mty_interface" ].
 
 Inductive m_body (m: id) (C: ClassName) (xs: [id]) (e: Exp) : Prop:=
-  | mbdy_ok : forall D ints Fs K Ms noDupfs noDupMds fargs  mty,
+  | mbdy_ok : forall C0 D ints Fs K Ms noDupfs noDupMds fargs noDupfargs,
               find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds)->
-              find m Ms = Some (MDecl mty e) ->
+              find m Ms = Some (MDecl (mty m C0 fargs noDupfargs) e) ->
               refs fargs = xs ->
               m_body m C xs e
   | mbdy_no_override: forall D ints Fs K Ms noDupfs noDupMds,
@@ -543,29 +543,31 @@ Include CTSanity.
 
 (* Auxiliary Lemmas *)
 (* mtype / MType_OK lemmas *)
-Lemma unify_returnType' : forall Ds D C D0 Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
-  mtype( m, C)= Ds ~> D ->
-  find C CT = Some (CDecl C D0 Fs noDupfs K Ms noDupMds) ->
-  find m Ms = Some (MDecl C0 m fargs noDupfargs ret) ->
+Lemma unify_returnType' : forall Ds D C' C D0 ints Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
+  mtype( m, C')= Ds ~> D ->
+  C' = class C ->
+  find C CT = Some (CDecl C D0 ints Fs noDupfs K Ms noDupMds) ->
+  find m Ms = Some (MDecl (mty m C0 fargs noDupfargs) ret) ->
   D = C0.
 Proof.
   induction 1; crush.
 Qed.
 
 
-Lemma unify_fargsType : forall Ds D C D0 Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
-  mtype( m, C)= Ds ~> D ->
-  find C CT = Some (CDecl C D0 Fs noDupfs K Ms noDupMds) ->
-  find m Ms = Some (MDecl C0 m fargs noDupfargs ret) ->
+Lemma unify_fargsType : forall Ds D C' C D0 ints Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
+  mtype( m, C')= Ds ~> D ->
+  C' = class C ->
+  find C CT = Some (CDecl C D0 ints Fs noDupfs K Ms noDupMds) ->
+  find m Ms = Some (MDecl (mty m C0 fargs noDupfargs) ret) ->
   Ds = map fargType fargs.
 Proof.
   induction 1; crush.
 Qed.
 
-Lemma methodDecl_OK :forall C D0 Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
-  find m Ms = Some (MDecl C0 m fargs noDupfargs ret) ->
-  find C CT = Some (CDecl C D0 Fs noDupfs K Ms noDupMds) ->
-  MType_OK C (MDecl C0 m fargs noDupfargs ret).
+Lemma methodDecl_OK :forall C D0 ints Fs noDupfs K Ms noDupMds C0 m fargs noDupfargs ret,
+  find m Ms = Some (MDecl (mty m C0 fargs noDupfargs) ret) ->
+  find C CT = Some (CDecl C D0 ints Fs noDupfs K Ms noDupMds) ->
+  MType_OK C (MDecl (mty m C0 fargs noDupfargs) ret).
 Proof.
   intros. apply ClassesOK in H0; inversion H0.
   match goal with
@@ -574,29 +576,42 @@ Proof.
 Qed.
 Hint Resolve methodDecl_OK.
 
-Lemma exists_mbody: forall C D Cs m,
-  mtype(m, C) = Cs ~> D ->
+Lemma exists_mbody': forall C' D Cs m,
+  mtype(m, C') = Cs ~> D ->
+  forall C,
+  C' = class C ->
+
   exists xs e, mbody(m, C) = xs o e /\ NoDup (this :: xs) /\ List.length Cs = List.length xs.
-Proof.
-  induction 1; eauto.
-  - exists (refs fargs) e; repeat (split; eauto); crush.
-  - crush; eexists; eauto.
+Proof. 
+  induction 1; intros; eauto;
+  try match goal with
+  | [ H : class _ = class _ |- _ ] =>  injection H; intros; subst; eauto
+  end; try discriminate.
+  - exists (refs fargs) e; repeat (split; eauto); crush. 
+  - forwards*: (IHm_type  _ eq_refl). crush; eexists; eexists; eauto.
+Qed.
+
+Lemma exists_mbody: forall C' C D Cs m,
+  mtype(m, C') = Cs ~> D ->
+  C' = class C ->
+  exists xs e, mbody(m, C) = xs o e /\ NoDup (this :: xs) /\ List.length Cs = List.length xs.
+eauto using exists_mbody'.
 Qed.
 
 (* find C CT Lemmas *)
 
 Lemma mtype_obj_False: forall m Cs C,
-  mtype(m, Object) = Cs ~> C ->
+  mtype(m, class Object) = Cs ~> C ->
   False.
 Proof.
   inversion 1; crush.
 Qed.
 Hint Resolve mtype_obj_False.
 
-Lemma super_obj_or_defined: forall C D Fs noDupfs K Ms noDupMds,
-    find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
-    D = Object \/ exists D0 Fs0 noDupfs0 K0 Ms0 noDupMds0, 
-                    find D CT = Some (CDecl D D0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
+Lemma super_obj_or_defined: forall C D ints Fs noDupfs K Ms noDupMds,
+    find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
+    D = Object \/ exists D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0, 
+                    find D CT = Some (CDecl D D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
 Proof.
   intros. destruct beq_id_dec with D Object; subst.
   left; auto.
