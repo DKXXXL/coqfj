@@ -152,7 +152,7 @@ Reserved Notation "C '<:' D " (at level 40).
   in the following section we need to specify the restriction 
     on the ClassTables *)
 Inductive Subtype : ty -> ty -> Prop :=
-  | S_Refl: forall C, C <: C
+  | S_Refl: forall C, (class C) <: (class C)
   | S_Trans: forall C D E, 
     C <: D -> 
     D <: E -> 
@@ -160,8 +160,9 @@ Inductive Subtype : ty -> ty -> Prop :=
   | S_CDecl: forall C D ints fs noDupfs K mds noDupMds,
     find C CT = Some (CDecl C D ints fs noDupfs K mds noDupMds ) ->
     (class C) <: (class D)
-  | S_IDecl: forall C i l,
-    find C CT = Some (IDecl i l) ->
+  | S_IDecl: forall C D ints fs noDupfs K mds noDupMds i,
+    find C CT = Some (CDecl C D ints fs noDupfs K mds noDupMds ) ->
+    In i ints ->
     (class C) <: (interface i)
 where "C '<:' D" := (Subtype C D).
 Hint Constructors Subtype.
@@ -372,13 +373,14 @@ Definition normal_form {X:Type} (R: relation X) (t: X) :=
 Definition assert_method_type (m: id) (D: ClassName) (Cs: [ty]) (C0: ty) :=
     (forall Ds D0, mtype(m, class D) = Ds ~> D0 -> (Ds = Cs /\ C0 = D0)).
 
-Definition implement_interface (it : InterfaceName) (D: ClassName) :=
-  forall mtys rety Cs,
+Definition implement_interface (it : InterfaceName) (C: ClassName) :=
+  forall C D Fs ints K Ms noDupfs noDupMds mtys,
+  find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
   find it CT = Some (IDecl it mtys) ->
-    forall mname fargs nodfargs,
-      In (mty mname rety fargs nodfargs) mtys ->
-      map fargType fargs = Cs ->
-      assert_method_type mname D Cs rety.
+    forall mname mtype,
+      find mname mtys = Some mtype ->
+      exists e,
+      find mname Ms = Some (MDecl mtype e).
 
 Definition implement_interfaces (its : [InterfaceName]) (D: ClassName) :=
   forall it,
@@ -403,6 +405,7 @@ Inductive CType_OK: TypeDecl -> Prop :=
             NoDup (refs (fdecl ++ Fs)) ->
             Forall (MType_OK C) (Ms) ->
             find C CT = Some (CDecl C D its Fs noDupfs K Ms noDupMds) ->
+            implement_interfaces its C ->
             CType_OK (CDecl C D its Fs noDupfs K Ms noDupMds).
 (* I think all interfaces will be well-typed *)
 
@@ -428,9 +431,19 @@ Hypothesis superClass_in_dom: forall C D ints Fs noDupfs K Ms noDupMds,
   exists D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0, 
     find D CT = Some (CDecl D D0 ints0 Fs0 noDupfs0 K0 Ms0 noDupMds0).
 
+
+(* Somehow the following is not used...? *)
+Hypothesis interface_in_dom: forall C D ints Fs noDupfs K Ms noDupMds i,
+  find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
+  In i ints ->
+  exists mtype, 
+    find i CT = Some (IDecl i mtype).
+
 Hypothesis ClassesOK: forall C D ints Fs noDupfs K Ms noDupMds, 
   find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
   CType_OK (CDecl C D ints Fs noDupfs K Ms noDupMds).
+
+
 Hint Resolve ClassesOK.
 
 Lemma subtype_obj_obj: forall C,
@@ -653,16 +666,40 @@ Proof.
     end.
 Qed.
 
+
+Lemma sub_type_is_a_class:
+  forall A B,
+    A <: B ->
+    exists C, A = class C.
+intros A B h. induction h; intros; subst; eauto.
+Qed.
+
+Ltac put_back H :=
+  generalize H; clear H.
+
 Ltac class_OK C:=
   match goal with
-    | [ H: find C ?CT = Some (CDecl _ _ _ _ _ _ _ ) |- _ ] => 
+    | [ H: find C ?CT = Some _ |- _ ] => 
       apply ClassesOK in H; inversion H; subst; sort; clear H
+  end.
+
+
+Ltac unify_subclass :=
+  match goal with 
+  | [H : (class _) <: _ |- _] => idtac; put_back H; unify_subclass; intro
+  | [H : ?A <: ?B |- _ ] =>
+    let C := fresh "C" in 
+    let HH := fresh "H" in 
+    destruct (sub_type_is_a_class _ _ H) as [C HH];
+    subst;
+    put_back H; unify_subclass; intro
+  | [|- _ ] => idtac 
   end.
 
 
 Ltac mtype_OK m :=
   match goal with
-    | [ H: find ?C _ = Some (CDecl _ _ _ _ _ ?Ms _ ), H1: find m ?Ms = Some (MDecl _ _ _ _ _) |- _ ] => 
+    | [ H: find ?C _ = Some (CDecl _ _ _ _ _ _ ?Ms _ ), H1: find m ?Ms = Some _ |- _ ] => 
       eapply methodDecl_OK in H1; eauto; inversion H1; subst; sort; clear H1
   end.
 
@@ -730,11 +767,31 @@ Ltac inv_decl :=
   let noDupfDecls := fresh "noDupfDecls" in
   let mDecls := fresh "mDecls" in
   let noDupmDecls := fresh "noDupmDecls" in
+  let ints := fresh "ints" in 
+  let cstrs := fresh "constructor" in 
+  let iname := fresh "interfacename" in
+  let mtys := fresh "mty" in
   repeat match goal with
-  | [ MD : MethodDecl |- _ ] => destruct MD as [C m fargs noDupFargs e]
+  | [ MD : MethodDecl |- _ ] => destruct MD as [[m C fargs noDupFargs] e]
   | [ FD : FieldDecl |- _ ] => destruct FD as [C f]
-  | [ CD : ClassDecl |- _ ] => destruct CD as [C D fDecls noDupfDecls mDecls noDupmDecls]
+  | [ CD : TypeDecl |- _ ] => destruct CD as [C D ints fDecls noDupfDecls cstrs mDecls noDupmDecls | iname mtys ]
   end.
+
+Ltac destruct_ALL :=
+  repeat 
+    match goal with
+    | [h : _ \/ _ |- _ ] => destruct h; subst; eauto    
+    | [h : _ + _ |- _ ] => destruct h; subst; eauto
+    | [h : _ * _ |- _ ] => destruct h; subst; eauto
+    | [h : _ /\ _ |- _ ] => destruct h; subst; eauto
+    | [h : exists _ , _ |- _ ] => destruct h; subst; eauto
+    | [h : {_ & _} |- _ ] => destruct h; subst; eauto
+    | [h : {_ & _ & _} |- _ ] => destruct h; subst; eauto
+    | [h : Some _ = Some _ |- _] => inversion h; subst; eauto
+    | [h : {_} + {_} |- _] => destruct h; subst; eauto
+    | [h : class _ = class _ |- _] => injection h; intros; subst; eauto; clear h
+    end.
+
 
 Ltac unify_find_ref :=
 let H := fresh "H" in
@@ -764,7 +821,7 @@ Ltac elim_eqs :=
 
 Ltac unify_override :=
   match goal with
-  | [H: assert_method_type ?m ?D ?Cs ?C0, H1: mtype(?m, ?D) = ?Ds ~> ?D0 |- _ ] => destruct H with Ds D0; [exact H1 | subst; clear H]
+  | [H: assert_method_type ?m ?D ?Cs ?C0, H1: mtype(?m, class ?D) = ?Ds ~> ?D0 |- _ ] => destruct H with Ds D0; [exact H1 | subst; clear H]
   end.
 
 Ltac unify_fields :=
@@ -779,82 +836,133 @@ Ltac unifall :=
 
 Ltac ecrush := unifall; eauto; crush; eauto.
 
-Lemma methods_same_signature: forall C D Fs noDupfs K Ms noDupMds Ds D0 m,
-    find C CT = Some (CDecl C D Fs noDupfs K Ms noDupMds) ->
-    mtype(m, D) = Ds ~> D0 ->
-    mtype(m, C) = Ds ~> D0.
+Lemma methods_same_signature: forall C D ints Fs noDupfs K Ms noDupMds Ds D0 m,
+    find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
+    mtype(m, class D) = Ds ~> D0 ->
+    mtype(m, class C) = Ds ~> D0.
 Proof.
   intros; class_OK C.
   find_dec_tac Ms m; ecrush.
 Qed.
+
+Lemma methods_same_signature_as_interface: forall C D ints Fs noDupfs K Ms noDupMds Ds D0 m i,
+    find C CT = Some (CDecl C D ints Fs noDupfs K Ms noDupMds) ->
+    In i ints ->
+    mtype(m, interface i) = Ds ~> D0 ->
+    mtype(m, class C) = Ds ~> D0.
+Proof.
+  intros; class_OK C.
+  inversion H1; subst; eauto; try discriminate.
+  forwards*: (H13 _ H0). unfold implement_interface in *.
+  forwards*: H; eauto. destruct_ALL; eauto.
+Qed.
 (* Subtype Lemmas *)
 
 Lemma obj_not_subtype: forall C,
-  C <> Object -> ~ Object <: C.
+  C <> Object -> ~ (class Object) <: (class C).
 Proof.
-  intros; intro. 
-  remember Object. induction H0; [auto | | crush].
-  subst. destruct beq_id_dec with D Object; subst; auto.
+  eauto using sub_not_obj.
 Qed.
 
-Lemma subtype_fields: forall C D fs ,
-  C <: D ->
+
+Lemma subtype_fields': forall C' D' ,
+  C' <: D' ->
+  forall fs C D,
+  C' = class C ->
+  D' = class D ->
   fields D fs ->
   exists fs', fields C (fs ++ fs').
 Proof.
   Hint Rewrite app_nil_r app_assoc.
-  intros. gen H0. gen fs.
-  subtype_cases (induction H) Case; intros.
+  intros C' D' H. 
+  subtype_cases (induction H) Case; intros; subst; eauto.
   Case "S_Refl".
     exists (@nil FieldDecl); crush.
   Case "S_Trans".
+    unify_subclass.
     repeat match goal with
-    | [H: forall fs, fields ?C fs -> _, H1: fields ?C ?fs|- _ ] => destruct (H fs H1); clear H
+    | [H: forall fs _ _, _ -> _ -> fields _ _ -> _, H1: fields ?C ?fs|- _ ] => destruct (H fs _ _ eq_refl eq_refl H1); clear H
     end; ecrush.
-  Case "S_Decl".
-    class_OK C; ecrush.
+  Case "S_CDecl". destruct_ALL.
+    class_OK C0; ecrush. 
+  Case "S_IDecl". try discriminate.
+
 Qed.
 
-Lemma subtype_order:
+Lemma subtype_fields: forall C D fs ,
+  (class C) <: (class D) ->
+  fields D fs ->
+  exists fs', fields C (fs ++ fs').
+intros. eauto using subtype_fields'.
+Qed.
+
+(* Lemma subtype_order:
   order _ Subtype.
 Proof.
   refine {| ord_refl:= (S_Refl); ord_trans:= (S_Trans); ord_antisym:=antisym_subtype|}.
-Qed.
+Qed. *)
 
-Lemma super_class_subtype: forall C D D0 fs noDupfs K mds noDupMds,
- C <: D -> C <> D ->
- find C CT = Some (CDecl C D0 fs noDupfs K mds noDupMds) ->
- D0 <: D.
+Lemma super_class_subtype': forall C' C D D' D0 ints fs noDupfs K mds noDupMds,
+ C' <: D' -> 
+ C' = class C ->
+ D' = class D ->
+ C' <> D' ->
+ find C CT = Some (CDecl C D0 ints fs noDupfs K mds noDupMds) ->
+ class D0 <: D'.
+  intros C' C D D' D0 ints fs noDupfs K mds noDupMds H.
+  gen D0 fs noDupfs K mds noDupMds ints C. gen D.
+  induction H; [crush | intros; subst; eauto | crush | crush].
+  unify_subclass. 
+  destruct beq_id_dec with C0 C; subst; eauto. 
+  assert (class C0 <> class C); eauto. intro; destruct_ALL; eauto.
+Qed.
+  
+
+Lemma super_class_subtype: forall C D D0 ints fs noDupfs K mds noDupMds,
+ (class C) <: (class D) ->  C <>  D ->
+ find C CT = Some (CDecl C D0 ints fs noDupfs K mds noDupMds) ->
+ class D0 <: class D.
 Proof.
-  intros C D D0 fs noDupfs K mds noDupMds H.
-  gen D0 fs noDupfs K mds noDupMds.
-  induction H; [crush | intros | crush].
-  destruct beq_id_dec with C D; ecrush.
+  intros.
+assert (class C <> class D); [intro; destruct_ALL; try contradiction; eauto | idtac].  
+ eauto using super_class_subtype'.
 Qed.
 
-Lemma subtype_not_sub': forall C D E,
-  E <: C ->
-  E <: D ->
-  C <: D \/ D <: C.
+
+Lemma subtype_not_sub'': forall C' D E,
+  E <: C' ->
+  forall C, C' = class C ->
+  E <: class D ->
+  class C <: class D \/ class D <: class C.
+
 Proof.
   Hint Resolve super_class_subtype.
-  intros C D E H. gen D.
-  induction H; auto; intros. 
+  intros C' D E H. gen D.
+  induction H; auto; intros; subst; destruct_ALL; unify_subclass; eauto; try discriminate.
   - edestruct IHSubtype1; eauto.
   - destruct beq_id_dec with C D0; ecrush.
 Qed.
 
-Lemma subtype_not_sub: forall C D E,
+Lemma subtype_not_sub': forall C D E,
+  E <: class C ->
+  E <: class D ->
+  class C <: class D \/ class D <: class C.
+Proof.
+  intros. eauto using subtype_not_sub''.
+Qed.
+
+(* This following doesn't hold when interfaces are around *)
+(* Lemma subtype_not_sub: forall C D E,
     E <: D ->
   ~ C <: D ->
   ~ D <: C ->
   ~ E <: C.
 Proof.
-  intros_all.
+  intros_all. unify_subclass.
   match goal with
   | [H: ?E <: ?D, H1: ?E <: ?C |- _ ] => edestruct subtype_not_sub' with (D:=D); eauto
   end.
-Qed.
+Qed. *)
 
 (* subst Lemmas *)
 Lemma var_subst_in: forall ds xs x i di,
@@ -876,9 +984,9 @@ Lemma A11: forall m D C Cs C0,
           mtype(m,D) = Cs ~> C0 ->
           mtype(m,C) = Cs ~> C0.
 Proof.
-  Hint Resolve methods_same_signature.
+  Hint Resolve methods_same_signature methods_same_signature_as_interface.
   induction 1; eauto.
-Qed.
+Qed. 
 
 
 Lemma weakening: forall Gamma e C,
