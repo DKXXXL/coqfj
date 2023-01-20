@@ -152,7 +152,7 @@ Reserved Notation "C '<:' D " (at level 40).
   in the following section we need to specify the restriction 
     on the ClassTables *)
 Inductive Subtype : ty -> ty -> Prop :=
-  | S_Refl: forall C, (class C) <: (class C)
+  | S_Refl: forall C, C <: C
   | S_Trans: forall C D E, 
     C <: D -> 
     D <: E -> 
@@ -667,11 +667,31 @@ Proof.
 Qed.
 
 
+Ltac destruct_ALL := 
+    match goal with
+    | [h : _ \/ _ |- _ ] => destruct h; subst; eauto    
+    | [h : _ + _ |- _ ] => destruct h; subst; eauto
+    | [h : _ * _ |- _ ] => destruct h; subst; eauto
+    | [h : _ /\ _ |- _ ] => destruct h; subst; eauto
+    | [h : exists _ , _ |- _ ] => destruct h; subst; eauto
+    | [h : {_ & _} |- _ ] => destruct h; subst; eauto
+    | [h : {_ & _ & _} |- _ ] => destruct h; subst; eauto
+    | [h : Some _ = Some _ |- _] => injection h; intros; subst; eauto; clear h
+    | [h : {_} + {_} |- _] => destruct h; subst; eauto
+    | [h : class _ = class _ |- _] => injection h; intros; subst; eauto; clear h
+    | [h : (CDecl _ _ _ _ _ _ _ _) = (CDecl _ _ _ _ _ _ _ _) |- _ ] => injection h; intros; subst; eauto; clear h
+    end.
+
+
+
 Lemma sub_type_is_a_class:
   forall A B,
-    A <: B ->
+    A <: (class B) ->
     exists C, A = class C.
-intros A B h. induction h; intros; subst; eauto.
+intros A B h. 
+remember (class B) as B'. gen B.
+induction h; intros; subst; eauto.
+forwards*: IHh2; destruct_ALL; subst; eauto.
 Qed.
 
 Ltac put_back H :=
@@ -687,7 +707,7 @@ Ltac class_OK C:=
 Ltac unify_subclass :=
   match goal with 
   | [H : (class _) <: _ |- _] => idtac; put_back H; unify_subclass; intro
-  | [H : ?A <: ?B |- _ ] =>
+  | [H : ?A <: (class _) |- _ ] =>
     let C := fresh "C" in 
     let HH := fresh "H" in 
     destruct (sub_type_is_a_class _ _ H) as [C HH];
@@ -776,22 +796,6 @@ Ltac inv_decl :=
   | [ FD : FieldDecl |- _ ] => destruct FD as [C f]
   | [ CD : TypeDecl |- _ ] => destruct CD as [C D ints fDecls noDupfDecls cstrs mDecls noDupmDecls | iname mtys ]
   end.
-
-Ltac destruct_ALL := 
-    match goal with
-    | [h : _ \/ _ |- _ ] => destruct h; subst; eauto    
-    | [h : _ + _ |- _ ] => destruct h; subst; eauto
-    | [h : _ * _ |- _ ] => destruct h; subst; eauto
-    | [h : _ /\ _ |- _ ] => destruct h; subst; eauto
-    | [h : exists _ , _ |- _ ] => destruct h; subst; eauto
-    | [h : {_ & _} |- _ ] => destruct h; subst; eauto
-    | [h : {_ & _ & _} |- _ ] => destruct h; subst; eauto
-    | [h : Some _ = Some _ |- _] => injection h; intros; subst; eauto; clear h
-    | [h : {_} + {_} |- _] => destruct h; subst; eauto
-    | [h : class _ = class _ |- _] => injection h; intros; subst; eauto; clear h
-    | [h : (CDecl _ _ _ _ _ _ _ _) = (CDecl _ _ _ _ _ _ _ _) |- _ ] => injection h; intros; subst; eauto; clear h
-    end.
-
 
 Ltac unify_find_ref :=
 let H := fresh "H" in
@@ -1013,8 +1017,8 @@ Proof.
     exists x x0; ecrush.
 Qed.
 
-
-Theorem term_subst_preserv_typing : forall Gamma xs (Bs: list ClassName) D ds As e,
+(* substitution lemma *)
+Theorem term_subst_preserv_typing : forall Gamma xs Bs D ds As e,
   nil extds xs : Bs |-- e : D ->
   NoDup xs ->
   Forall2 (ExpTyping Gamma) ds As ->
