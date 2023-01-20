@@ -897,6 +897,7 @@ Lemma subtype_fields: forall C D fs ,
   (class C) <: (class D) ->
   fields D fs ->
   exists fs', fields C (fs ++ fs').
+
 intros. eauto using subtype_fields'.
 Qed.
 
@@ -1047,9 +1048,9 @@ Proof with eauto.
   Case "T_Field".
     simpl. destruct IHExpTyping as [C']. destruct H8. 
     exists Ci. 
-    split...
+    split... unify_subclass.
     eapply subtype_fields in H8... destruct H8 as [fs'].
-    eapply T_Field. eassumption.  eapply H8. eapply nth_error_app_app... auto. auto.
+    eapply T_Field; eauto.  eapply nth_error_app_app... 
   Case "T_Invk". rename C0 into D0.
     destruct IHExpTyping as [C0]. destruct H8.
     apply A11 with (m:=m) (Cs:=Ds) (C0:=C) in H8...
@@ -1061,7 +1062,7 @@ Proof with eauto.
     intros x y z ?H ?H1; apply S_Trans with y; auto. 
   Case "T_New".
     apply Forall2_exi in H7. destruct H7 as [Cs']. destruct H7; sort.
-    exists C; split; auto. simpl. 
+    exists (class C); split; auto. simpl. 
     apply Forall2_trans with (zs:= Ds) in H7; auto.
     eapply T_New...
     apply Forall2_map; auto.
