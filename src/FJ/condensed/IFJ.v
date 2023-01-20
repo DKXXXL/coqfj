@@ -22,6 +22,12 @@ Inductive ty : Set :=
   | class : ClassName -> ty 
   | interface : InterfaceName -> ty.
 
+Definition ty_eq_dec :
+  forall (x y : ty),
+    {x = y} + {~ x = y}.
+intros. repeat (decide equality).
+Qed.
+
 (* Vars must appear only inside methods body *)
 Definition Var := id.
 (* Similar for this variable *)
@@ -1018,6 +1024,20 @@ Proof.
     exists x x0; ecrush.
 Qed.
 
+Lemma Cast_is_always_doable:
+  forall G e C,
+    G |-- e : C ->
+    forall D, 
+    G |-- ExpCast D e : D.
+intros. 
+destruct (ty_eq_dec C D); subst; eauto.
+destruct (dec_subtype C D);
+destruct (dec_subtype D C);
+eauto.
+eapply T_SCast; eauto. exact STUPID_STEP.
+Qed.
+  
+
 (* substitution lemma *)
 Theorem term_subst_preserv_typing : forall Gamma xs Bs D ds As e,
   nil extds xs : Bs |-- e : D ->
@@ -1068,24 +1088,30 @@ Proof with eauto.
     apply Forall2_map; auto.
     intros x y z ?H ?H1; apply S_Trans with y; auto.
   Case "T_UCast".
-    exists C. split; auto. simpl.
+    exists C. 
+    split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
+    (* simpl.
     destruct IHExpTyping as [E]. destruct H5.
-    eapply T_UCast...
+    eapply T_UCast... *)
   Case "T_DCast".
-    exists C; split; auto. simpl.
+    exists C;     split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
+    
+    (* split; auto. simpl.
     destruct IHExpTyping as [E]. destruct H6.
     destruct dec_subtype with E C.
     eapply T_UCast in H7...
-    destruct beq_id_dec with E C. rewrite e in H8; false; apply H8; auto.
+    destruct ty_eq_dec with E C. rewrite e in H8; false; apply H8; auto.
     destruct dec_subtype with C E.
     eapply T_DCast in H7...
     eapply T_SCast in H7...
-    apply STUPID_STEP.
+    apply STUPID_STEP. *)
   Case "T_SCast".
-    exists C; split; auto. simpl.
-    destruct IHExpTyping as [E]. destruct H7.
-    eapply T_SCast...
-    eapply subtype_not_sub...
+    exists C;     split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
+    (* split; auto. simpl.
+    destruct IHExpTyping as [E]. destruct_ALL. *)
+    (* we can always *)
+    (* eapply T_SCast...
+    eapply subtype_not_sub... *)
 Qed. 
 
 Lemma exists_subtyping : forall Gamma es es' Cs Ds i ei ei' C D C0,
