@@ -777,8 +777,7 @@ Ltac inv_decl :=
   | [ CD : TypeDecl |- _ ] => destruct CD as [C D ints fDecls noDupfDecls cstrs mDecls noDupmDecls | iname mtys ]
   end.
 
-Ltac destruct_ALL :=
-  repeat 
+Ltac destruct_ALL := 
     match goal with
     | [h : _ \/ _ |- _ ] => destruct h; subst; eauto    
     | [h : _ + _ |- _ ] => destruct h; subst; eauto
@@ -787,9 +786,10 @@ Ltac destruct_ALL :=
     | [h : exists _ , _ |- _ ] => destruct h; subst; eauto
     | [h : {_ & _} |- _ ] => destruct h; subst; eauto
     | [h : {_ & _ & _} |- _ ] => destruct h; subst; eauto
-    | [h : Some _ = Some _ |- _] => inversion h; subst; eauto
+    | [h : Some _ = Some _ |- _] => injection h; intros; subst; eauto; clear h
     | [h : {_} + {_} |- _] => destruct h; subst; eauto
     | [h : class _ = class _ |- _] => injection h; intros; subst; eauto; clear h
+    | [h : (CDecl _ _ _ _ _ _ _ _) = (CDecl _ _ _ _ _ _ _ _) |- _ ] => injection h; intros; subst; eauto; clear h
     end.
 
 
@@ -883,7 +883,7 @@ Proof.
     repeat match goal with
     | [H: forall fs _ _, _ -> _ -> fields _ _ -> _, H1: fields ?C ?fs|- _ ] => destruct (H fs _ _ eq_refl eq_refl H1); clear H
     end; ecrush.
-  Case "S_CDecl". destruct_ALL.
+  Case "S_CDecl". repeat destruct_ALL.
     class_OK C0; ecrush. 
   Case "S_IDecl". try discriminate.
 
@@ -938,7 +938,7 @@ Lemma subtype_not_sub'': forall C' D E,
 Proof.
   Hint Resolve super_class_subtype.
   intros C' D E H. gen D.
-  induction H; auto; intros; subst; destruct_ALL; unify_subclass; eauto; try discriminate.
+  induction H; auto; intros; subst; repeat destruct_ALL; unify_subclass; eauto; try discriminate.
   - edestruct IHSubtype1; eauto.
   - destruct beq_id_dec with C D0; ecrush.
 Qed.
@@ -999,14 +999,15 @@ Qed.
 
 
 Lemma A14: forall D m C0 xs Ds e,
-  mtype(m,C0) = Ds ~> D ->
+  mtype(m,class C0) = Ds ~> D ->
   mbody(m,C0) = xs o e ->
-  exists D0 C,  C0 <: D0 /\ C <: D /\
+  exists D0 C,  class C0 <: D0 /\ C <: D /\
   nil extds (this :: xs) : (D0 :: Ds) |-- e : C.
 Proof.
   intros.
   mbdy_cases (induction H0) Case.
-  mtype_OK m. exists C E0. unifall; eauto.
+  mtype_OK m; unifall. 
+  inversion H; subst; eauto; unifall; eauto.
   Case "mbdy_no_override".
     inversion H; ecrush.
     exists x x0; ecrush.
