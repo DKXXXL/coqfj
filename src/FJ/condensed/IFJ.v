@@ -1305,7 +1305,7 @@ Theorem progress: forall e C,
   nil |-- e : C ->
   normal_form Computation e ->
   Value e \/
-  (exists E C D es, e = E [; ExpCast C (ExpNew D es);] /\ ~ D <: C).
+  (exists E C D es, e = E [; ExpCast C (ExpNew D es);] /\ ~ (class D) <: C).
 Proof.
   intros.
   typing_cases (induction H using ExpTyping_ind') Case; intros.
@@ -1320,7 +1320,7 @@ Proof.
       false; apply H0. 
       assert (nth_error (map fieldType fs0) i = Some (fieldType Fi)) by (apply map_nth_error; eauto).
       lets ?H: Forall2_nth_error' Cs H10 H1. destruct H3 as [Ci].
-      lets ?H: Forall2_nth_error' Cs H8 H3. destruct H4 as [ei].
+      lets ?H: Forall2_nth_error' Cs H9 H3. destruct H4 as [ei].
       exists ei. constructor. econstructor; eauto.
     SCase "Stuck".
       destruct H5 as (E & C & D & es & H5 & H6).
@@ -1331,10 +1331,10 @@ Proof.
     SCase "Value".
       inversion H5; subst. inversion H; subst. sort.
       false. apply H0. edestruct exists_mbody as (xs &e' & ?H & ?H & ?H); eauto.
-      exists ([; ExpNew C0 es0 :: es \ this :: xs;] e'); constructor. constructor; eauto.
+      exists ([; ExpNew C1 es0 :: es \ this :: xs;] e'); constructor. constructor; eauto.
       apply Forall2_len in H2. apply Forall2_len in H3. rewrite <- H9. rewrite H2; auto.
     SCase "Stuck".
-      edestruct exists_mbody as (xs &e' & ?H & ?H & ?H); eauto.
+      (* edestruct exists_mbody as (xs &e' & ?H & ?H & ?H); eauto. *)
       destruct H5 as (?E & ?C & ?D & ?es & ?H & ?H). sort.
       right. exists (C_minvk_recv E m es); repeat eexists; subst; simpl; eauto.
   Case "T_New". eauto.
@@ -1343,7 +1343,7 @@ Proof.
     intro. apply H0. destruct H2 as [e0']. eauto.
     SCase "Value".
       inversion H2; subst. inversion H; subst. sort.
-      false. apply H0. exists (ExpNew D es); eauto. constructor; eauto. constructor. eauto.
+      false. apply H0. exists (ExpNew C0 es); eauto. constructor; eauto. constructor. eauto.
     SCase "Stuck".
       destruct H2 as (?E & ?C & ?D & ?es & ?H & ?H). sort.
       right. exists (C_cast C E). repeat eexists; subst; simpl; eauto.
