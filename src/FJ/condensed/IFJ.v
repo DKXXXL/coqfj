@@ -1255,9 +1255,9 @@ Proof with eauto.
   Case "R_Cast". 
     assert (D = C0) by (inversion H0; crush); subst. 
     inversion_clear H0. repeat eexists; eauto. 
-    assert (C = D) by (inversion H1; crush); subst.
+    assert (class C = D) by (inversion H1; crush); subst.
     false. apply antisym_subtype in H2. auto.
-    assert (C = D) by (inversion H1; crush); subst. contradiction.
+    assert (class C = D) by (inversion H1; crush); subst. contradiction.
 Qed.
 
 Theorem preservation : forall Gamma e e' C,
