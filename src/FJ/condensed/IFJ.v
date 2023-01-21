@@ -1090,28 +1090,11 @@ Proof with eauto.
   Case "T_UCast".
     exists C. 
     split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
-    (* simpl.
-    destruct IHExpTyping as [E]. destruct H5.
-    eapply T_UCast... *)
   Case "T_DCast".
     exists C;     split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
     
-    (* split; auto. simpl.
-    destruct IHExpTyping as [E]. destruct H6.
-    destruct dec_subtype with E C.
-    eapply T_UCast in H7...
-    destruct ty_eq_dec with E C. rewrite e in H8; false; apply H8; auto.
-    destruct dec_subtype with C E.
-    eapply T_DCast in H7...
-    eapply T_SCast in H7...
-    apply STUPID_STEP. *)
   Case "T_SCast".
     exists C;     split; auto; simpl; repeat destruct_ALL;  eauto using Cast_is_always_doable.
-    (* split; auto. simpl.
-    destruct IHExpTyping as [E]. destruct_ALL. *)
-    (* we can always *)
-    (* eapply T_SCast...
-    eapply subtype_not_sub... *)
 Qed. 
 
 Lemma exists_subtyping : forall Gamma es es' Cs Ds i ei ei' C D C0,
@@ -1154,7 +1137,7 @@ Inductive Eval_Ctx : Type :=
   | C_field_invk : Eval_Ctx -> id -> Eval_Ctx
   | C_minvk_recv: Eval_Ctx -> id -> [Exp] -> Eval_Ctx
   | C_minv_arg: Exp -> id -> [Exp] -> Eval_Ctx -> [Exp] -> Eval_Ctx
-  | C_cast: ClassName -> Eval_Ctx -> Eval_Ctx
+  | C_cast: ty -> Eval_Ctx -> Eval_Ctx
   | C_new: ClassName -> [Exp] -> Eval_Ctx -> [Exp] -> Eval_Ctx.
 
 (* It's isCtx which actually enforces standard call-by-value 
@@ -1243,12 +1226,12 @@ Proof with eauto.
     inversion H2; subst. simpl in *. destruct Fi in *. simpl in *. subst. 
     rename C1 into D0. sort. assert (C = D0). inversion H5. reflexivity. subst.
     rewrite (fields_det D0 fs Fs) in H7 by auto.
-    clear H6 fs. assert ((FDecl c0 i0) = (FDecl c i0)).
+    clear H6 fs. assert ((FDecl t0 i0) = (FDecl t i0)).
     eapply ref_noDup_nth_error; eauto.  eapply fields_NoDup; eauto. inversion H3.
     inversion H5. subst. sort.
     rewrite (fields_det D0 Fs fs) in H0 by auto.
     rewrite (fields_det D0 Fs fs) in H7 by auto.
-    clear H H3 H12 H7 Fs. 
+    clear H H3 H7 Fs. 
     assert (nth_error es i <> None). intro. crush.
     assert (List.length es = List.length Cs) by (apply (Forall2_len _ _ _ _ _ H11)).
     apply -> (nth_error_Some) in H. rewrite H3 in H.
@@ -1258,14 +1241,14 @@ Proof with eauto.
      destruct (Forall2_nth_error _ _ (Subtype) Cs (map fieldType fs) i Ci) as [fi']...
     exists Ci.
     split. sort. 
-    apply map_nth_error with (B:=ClassName) (f:=fieldType) in H0; simpl in *.
+    apply map_nth_error with (f:=fieldType) in H0; simpl in *.
     eapply Forall2_forall...
     apply (Forall2_forall _ _ (ExpTyping Gamma) es Cs i ei Ci); auto.
   Case "R_Invk".
     inversion H2. subst. inversion H6; subst; sort.
     eapply A14 in H7... 
     destruct H7 as [B]. destruct H3. destruct H3. destruct H4.
-    eapply term_subst_preserv_typing with (ds := ExpNew C2 es :: ds) in H7...
+    eapply term_subst_preserv_typing with (ds := ExpNew C es :: ds) in H7...
     destruct H7 as [E]. destruct H7.
     exists E; split; eauto.
     apply eq_S; auto.
