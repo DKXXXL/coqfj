@@ -1271,7 +1271,7 @@ Proof with eauto.
     eapply preservation_step; eauto.
   Case "RC_Field".
     inversion H; subst. eapply IHComputation in H3. 
-    destruct H3 as (C' & ?H & ?H).
+    destruct H3 as (C' & ?H & ?H). unify_subclass.
     lets ?H: subtype_fields H1 H4; eauto. destruct H3.
     apply nth_error_app_app with (l':=x) in H5. eauto.
   Case "RC_Invk_Recv".
@@ -1289,25 +1289,16 @@ Proof with eauto.
     edestruct exists_subtyping with (es := es) (Cs := Cs) (es':= es') (Ds:= Ds) as (Cs' & ?H & ?H); eauto.
   Case "RC_New_Arg".
     inversion H4; subst.
-    lets ?H: Forall2_nth_error H9 H. destruct H5 as [?C].
+    lets ?H: Forall2_nth_error H9 H. destruct H5 as [?C]. 
     lets ?H: Forall2_nth_error H11 H5. destruct H6 as [?D].
-    exists C0; split; auto. 
+    exists (class C); split; auto.    
     lets ?H: H9.
     eapply Forall2_forall with (n:=i) (x:=ei) in H8; eauto. 
     eapply IHComputation in H8. destruct H8 as (?C' & ?H & ?H).
     edestruct exists_subtyping with (es := es) (Cs := Cs) (es':= es') (Ds:= map fieldType fs) as (Cs' & ?H & ?H); eauto.
   Case "RC_Cast".
     assert (C0 = C) by (inversion H; crush); subst.
-    inversion H; subst; eapply (IHComputation) in H3; destruct H3 as [C0']; destruct H1. eauto.
-    rename D into C0. clear H5.
-    destruct dec_subtype with C0' C.
-    eapply T_UCast in H2; eauto.
-    destruct dec_subtype with C C0'.
-    eapply T_DCast in H2; eauto. crush.
-    eapply T_SCast in H2; eauto. apply STUPID_STEP.
-    rename D into C0. clear H6.
-    exists C; split; eauto. eapply T_SCast; eauto. 
-    eapply subtype_not_sub...
+    inversion H; subst; eapply (IHComputation) in H3; destruct H3 as [C0']; destruct H1; eauto using Cast_is_always_doable. 
 Qed.
 
 Theorem progress: forall e C,
